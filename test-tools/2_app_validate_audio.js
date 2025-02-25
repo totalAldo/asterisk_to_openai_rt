@@ -1,4 +1,4 @@
-// app_validate_stt_standard.js
+// 2_app_validate_audio.js
 const { OpenAI } = require('openai');
 const fs = require('fs');
 require('dotenv').config();

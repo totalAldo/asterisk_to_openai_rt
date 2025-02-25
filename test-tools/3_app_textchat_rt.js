@@ -1,4 +1,4 @@
-// app.js
+// 3_app_textchat_rt.js
 const WebSocket = require('ws');
 require('dotenv').config();
 
