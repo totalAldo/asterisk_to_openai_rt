@@ -1,2 +1,2 @@
-# asterisk_to_openai
+# asterisk_to_openai_rt
 Asterisk to OpenAI RealTime
