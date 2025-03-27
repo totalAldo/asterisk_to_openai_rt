@@ -2,7 +2,7 @@
 
 # Asterisk to OpenAI Real-Time Integration
 
-This project connects Asterisk with OpenAI's real-time API to enable real-time voice interactions. It processes incoming audio from Asterisk SIP calls, sends it to OpenAI for processing, and streams the audio responses back to the caller seamlessly.
+This project connects Asterisk with OpenAI's real-time API to enable real-time voice interactions. It processes incoming audio from Asterisk SIP calls, sends it to OpenAI for processing, and streams the audio responses back to the caller seamlessly. (Please use headphones for testing, using speakers will constantly interrupt communication.)
 
 ## Features
 1. **Asterisk Integration**:
@@ -55,4 +55,7 @@ This project connects Asterisk with OpenAI's real-time API to enable real-time v
    ```bash
    git clone https://github.com/infinitocloud/asterisk_to_openai_rt.git
    cd asterisk_to_openai_rt# asterisk_to_openai_rt
+
+2. **Rename .env.sample to .env and add your OpenAI key.
+
 Asterisk to OpenAI RealTime
