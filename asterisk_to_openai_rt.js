@@ -27,6 +27,9 @@ const VAD_PREFIX_PADDING_MS = process.env.VAD_PREFIX_PADDING_MS ? parseInt(proce
 const VAD_SILENCE_DURATION_MS = process.env.VAD_SILENCE_DURATION_MS ? parseInt(process.env.VAD_SILENCE_DURATION_MS) : 500; // VAD silence duration in ms
 const TARGET_RMS = 0.15; // Target Root Mean Square for audio normalization
 const MIN_RMS = 0.001; // Minimum RMS to apply gain
+const TERMINATE_CALL_KEYWORDS = process.env.TERMINATE_CALL_KEYWORDS ?
+  process.env.TERMINATE_CALL_KEYWORDS.split(',').map(word => word.trim().toLowerCase()) :
+  ['goodbye', 'hang up', 'end call', 'disconnect'];
 
 // Counters for client/server event logging
 let sentEventCounter = 0; // Tracks sent events to OpenAI
@@ -292,28 +295,38 @@ function pcm16ToMuLaw(sample) {
   return ~(sign | (exponent << 4) | mantissa) & 0xFF; // Invert bits
 }
 
-// Resample 24kHz PCM to 8kHz
 function resamplePcm24kHzTo8kHz(pcm24kHz) {
   const inSampleRate = 24000;
   const outSampleRate = 8000;
+  const ratio = inSampleRate / outSampleRate; // 3:1 ratio
   const inSamples = pcm24kHz.length / 2;
-  const outSamples = Math.floor(inSamples * outSampleRate / inSampleRate);
+  const outSamples = Math.floor(inSamples / ratio);
   const pcm8kHz = Buffer.alloc(outSamples * 2);
 
+  // Create a view for faster access to avoid multiple Buffer reads
+  const view = new Int16Array(pcm24kHz.buffer, pcm24kHz.byteOffset, pcm24kHz.length / 2);
+
+  // Pre-calculate the step multipliers outside the loop
+  let srcPos = 0;
+
   for (let i = 0; i < outSamples; i++) {
-    const srcPos = i * inSampleRate / outSampleRate;
     const srcIndex = Math.floor(srcPos);
     const frac = srcPos - srcIndex;
 
+    // Safely handle the edge case
     if (srcIndex + 1 < inSamples) {
-      const sample1 = pcm24kHz.readInt16LE(srcIndex * 2);
-      const sample2 = pcm24kHz.readInt16LE((srcIndex + 1) * 2);
-      const interpSample = Math.round(sample1 + frac * (sample2 - sample1)); // Linear interpolation
+      const sample1 = view[srcIndex];
+      const sample2 = view[srcIndex + 1];
+      // Use multiplication instead of addition with multiplier for better precision
+      const interpSample = Math.round(sample1 * (1 - frac) + sample2 * frac);
       pcm8kHz.writeInt16LE(interpSample, i * 2);
     } else if (srcIndex < inSamples) {
-      pcm8kHz.writeInt16LE(pcm24kHz.readInt16LE(srcIndex * 2), i * 2);
+      pcm8kHz.writeInt16LE(view[srcIndex], i * 2);
     }
+
+    srcPos += ratio; // Advance to next sample position
   }
+
   return pcm8kHz;
 }
 
@@ -490,6 +503,11 @@ async function streamAudio(channelId, rtpSource, initialBuffer = Buffer.alloc(0)
   };
 }
 
+function containsTerminationKeyword(text) {
+  const lowercaseText = text.toLowerCase();
+  return TERMINATE_CALL_KEYWORDS.some(keyword => lowercaseText.includes(keyword));
+}
+
 // Start WebSocket connection to OpenAI real-time API
 function startOpenAIWebSocket(channelId) {
   logger.info(`Attempting to start OpenAI WebSocket for channel ${channelId}`);
@@ -613,11 +631,47 @@ function startOpenAIWebSocket(channelId) {
       case 'response.audio_transcript.delta':
         transcriptDeltaCount++;
         responseTranscript += response.delta; // Accumulate transcript
+
+        // Check for termination keywords in accumulated transcript
+        if (containsTerminationKeyword(responseTranscript)) {
+          logServer(`Termination keyword detected in transcript: "${responseTranscript.trim()}" for channel ${channelId}`);
+          // Allow the assistant to finish speaking before hanging up
+          setTimeout(async () => {
+            try {
+              if (sipMap.has(channelId)) {
+                logServer(`Hanging up channel ${channelId} due to termination keyword`);
+                await ariClient.channels.hangup({ channelId: channelId });
+              }
+            } catch (err) {
+              logger.error(`Failed to hang up channel ${channelId}: ${err.message}`);
+            }
+          }, 3000); // Wait 3 seconds to allow the assistant to finish speaking
+        }
         break;
+
+      // Also modify the 'response.audio_transcript.done' case:
       case 'response.audio_transcript.done':
         logServer(`Response received for channel ${channelId} | Transcript: "${response.transcript.trim()}" | Duration: ${duration}s | Status: Received`);
+
+        // Check for termination keywords in final transcript
+        if (containsTerminationKeyword(response.transcript)) {
+          logServer(`Termination keyword detected in final transcript: "${response.transcript.trim()}" for channel ${channelId}`);
+          // Allow the assistant to finish speaking before hanging up
+          setTimeout(async () => {
+            try {
+              if (sipMap.has(channelId)) {
+                logServer(`Hanging up channel ${channelId} due to termination keyword`);
+                await ariClient.channels.hangup({ channelId: channelId });
+              }
+            } catch (err) {
+              logger.error(`Failed to hang up channel ${channelId}: ${err.message}`);
+            }
+          }, 3000); // Wait 3 seconds to allow the assistant to finish speaking
+        }
+
         responseTranscript = '';
         break;
+
       case 'response.done':
         audioReceivedLogged = false;
         isPlayingResponse = false;
