@@ -9,10 +9,11 @@ const async = require('async'); // Async utilities (used for RTP queue)
 require('dotenv').config(); // Loads environment variables from .env file
 
 // Configuration constants loaded from environment variables or defaults
-const ARI_URL = 'http://127.0.0.1:8088'; // Asterisk ARI endpoint
-const ARI_USER = 'asterisk'; // ARI username
-const ARI_PASS = 'asterisk'; // ARI password
-const ARI_APP = 'stasis_app'; // Stasis application name
+const PROMPT = process.env.PROMPT || 'You are a helpful assistant.'; // Default prompt for OpenAI
+const ARI_URL = process.env.ARI_URL || 'http://127.0.0.1:8088'; // Asterisk ARI endpoint
+const ARI_USER = process.env.ARI_USER || 'asterisk'; // ARI username
+const ARI_PASS = process.env.ARI_PASS || 'asterisk'; // ARI password
+const ARI_APP = process.env.ARI_APP || 'stasis_app'; // Stasis application name
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY; // OpenAI API key from .env
 const REALTIME_URL = 'wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-12-17'; // OpenAI real-time WebSocket URL
 const RTP_PORT = 12000; // Local port for RTP audio reception
@@ -532,7 +533,7 @@ function startOpenAIWebSocket(channelId) {
       session: {
         modalities: ['audio', 'text'], // Enable audio and text responses
         voice: 'alloy', // Voice for OpenAI responses
-        instructions: 'Always respond with audio to any detected speech.',
+        instructions: PROMPT,
         turn_detection: {
           type: 'server_vad', // Server-side Voice Activity Detection
           threshold: VAD_THRESHOLD,
@@ -660,7 +661,6 @@ function startOpenAIWebSocket(channelId) {
 
   return { ws, getPlaybackComplete: () => playbackComplete, stopStream: () => streamHandler && streamHandler.stop() };
 }
-
 // Main async function to initialize ARI and handle events
 (async () => {
   try {
